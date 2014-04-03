@@ -1,0 +1,22 @@
+
+#include "l3.h"
+#include "l4b.h"
+
+
+
+int L4b::init(L4b_upper *upper, L3 *lower)
+{
+	return 1;
+}
+
+
+void L4b::pop(uint8_t *message, int length)
+{
+	
+}	
+
+
+int L4b::push(uint8_t **commands, int *command_lengths, int command_list_length)
+{
+	
+}

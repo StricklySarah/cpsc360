@@ -1,0 +1,27 @@
+
+#include "l2.h"
+#include "l3.h"
+
+
+int L3::init(L3_upper *upper, L2 *lower)
+{
+
+	
+	return 1;
+}
+
+
+void L3::pop(uint8_t *message, int length)
+{
+	
+	
+	
+}	
+
+
+//send a chunk
+int L3::push(uint8_t *message, int length)
+{
+
+	
+}

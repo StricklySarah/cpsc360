@@ -1,0 +1,264 @@
+//CANNOT MAKE ASSUMPTIONS ABOUT RECVLINE
+ 
+#include "simhttp.h"
+  
+// Function Prototypes
+int requestReader(char *reqest, char *buff[], int length);
+void makeResponse(char *response, char *version, int type, char* file);
+void logRequest(char *meth, char *url, struct tm current, int response);
+char *getDate(struct tm t);
+  
+int main(int argc, char **argv){
+  extern int optind;
+  extern char *optarg;
+  uint16_t port = 8080;
+  int c, listenfd, n, i;
+  int respType, length;
+  struct sockaddr_in  servaddr, from_address;
+  struct tm *current;
+  const time_t *now;
+      
+  int connfd;
+  char buff[MAXLINE+1];
+  char recvline[MAXLINE+1];
+  char filePath[PATH_MAX];
+  char *filePointer, *rootPointer, *root;
+  char *request[50];
+  char requestPath[100];
+  time_t ticks;
+  
+  while ((c = getopt(argc, argv, "p:")) != -1) {
+    switch(c) {
+      case 'p':
+        port = atoi(optarg);
+        break;
+      case '?': //default error out
+        fprintf(stderr,"unkown argument, %s \n", optarg);
+        exit(1);
+    }
+    if((optind+1) > argc){
+      fprintf(stderr,"not enough arguments, must enter directory \n");  
+      exit(1);
+    }
+  }
+ 
+    root = argv[optind];
+  
+  if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0 ){
+    fprintf(stderr, "bind error\n");
+    return 0;
+  }
+ 
+  bzero(&servaddr, sizeof(servaddr));
+  servaddr.sin_family      = AF_INET;
+  servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  servaddr.sin_port        = htons(port); /* server port */
+      
+  if ((bind(listenfd, (SA *) &servaddr, sizeof(servaddr))) < 0){
+      fprintf(stderr, "bind error\n");
+      return 0;
+  }
+      
+    //fprintf(stderr, "servaddr.sin_port (htons(port)) = %d \n", servaddr.sin_port);
+    //fprintf(stderr, "listenfd: %d\n", listenfd);
+      
+  if ((listen(listenfd, LISTENQ)) < 0){
+      fprintf(stderr, "listen error\n");
+      return 0;
+  }
+              
+  for ( ; ; ) {
+    //accept blocks until an incoming connection arrives
+    //it returns a "file descriptor" to the connection
+    fprintf(stderr,"waiting for a connection...");
+    fflush(stdout);
+    connfd = accept(listenfd, (SA *) NULL, NULL);
+ 
+    // Get the current time
+    time_t rawtime = time(NULL);
+    struct tm timeinfo = *gmtime(&rawtime);
+    
+    fprintf(stderr,"got one! \n");
+    if (connfd < 0) {
+        fprintf(stderr, "accept error");
+    }
+ 
+    //Now read the client's message.
+    while ( (n = read(connfd, recvline, MAXLINE)) > 0) {
+      //n = read(connfd, recvline, MAXLINE);
+      recvline[n] = 0;    /* null terminate */
+      if (fputs(recvline, stdout) == EOF) {
+        fprintf(stderr, "fputs error");
+        return 0;
+      }
+ 
+      //detect the end of the message.
+      if (recvline[n-1] == '\n') {
+        break;
+      }
+    }
+    if (n < 0) {
+      fprintf(stderr, "read err");
+      return 0;
+    }
+ 
+    // Interpret the request
+    length = requestReader(recvline, request, n);
+ 
+    // Get the root path
+    strcpy(requestPath, root);
+    rootPointer = realpath(requestPath, rootPointer);
+    //fprintf(stderr, "root path: %s\n", rootPointer);
+ 
+    strcat(requestPath, request[1]);
+    // Get the file location
+    if (request[1][strlen(request[1])-1] == '/') {
+      strcat(requestPath, "index.html");
+    }
+    fprintf(stderr, "requestPath (with strcat): %s\n", requestPath);
+      
+    filePointer = realpath(requestPath, filePath);
+    fprintf(stderr, "filePointer: %s\n", filePointer);
+ 
+    //now send a response.
+    ticks = time(NULL);
+ 
+    // Malformed packet
+    if (packetMalformed(request, length)) {
+      respType = 400;
+    }
+    // Request not found
+    else if (filePointer == NULL) {
+      respType = 404;
+    }
+    // Request outside of directory
+    else if (strstr(filePointer, rootPointer) == NULL) {
+      respType = 403;
+    }
+    // Request other than GET or HEAD
+    else if ((strcmp(request[0], "HEAD") != 0) && (strcmp(request[0], "GET") != 0)) {
+      respType = 405;
+    }
+    // Request was successful
+    else {
+      respType = 200;
+    }
+    //note: normally, you may want to check the results from write and close
+    //in case errors occur. For now, I'm ignoring them.
+    makeResponse(buff, request[2], respType, filePointer);
+    write(connfd, buff, strlen(buff));
+ 
+    // Print request information
+    logRequest(request[0], request[1], timeinfo, respType);
+    close(connfd);
+  }
+ 
+  free(filePointer);
+  return 0;
+}
+  
+// Function to handle the HTTP request
+int requestReader(char *request, char *buff[], int length){  
+  char *lines[MAXLINE+1];
+  char *CR = strtok(request, "\r\n");
+  char *sub = NULL;
+  char *space;
+  int i = 0;
+  int j = 0;
+  int k = 0;
+  
+  // Split request by line and store lines
+  while(CR != NULL) {
+    lines[i++] = CR;
+    CR = strtok(NULL, "\r\n");
+  }
+ 
+  // Split lines by whitespace and store in buff
+  for (k = 0; k < i; k++) {
+    space = strtok(lines[k], " ");
+    while(space != NULL) {
+      buff[j++] = space;
+      //fprintf(stderr, "buff[%d]: %s \n", j-1, buff[j-1]);
+      space = strtok(NULL, " ");
+    }
+  }
+  return j;
+}
+ 
+void makeResponse(char *response, char *version, int type, char* file) {
+    time_t curtime;
+    struct stat sb;
+  struct tm *timestamp, *modtime;
+  char *typestring = (char *)malloc(20);
+ 
+/*HTTP/1.1 200 OK\r\n
+Date: Thu, 20 Feb 2014 22:07:47\r\n
+Last -Modified: Thu, 20 Feb 2014 22:07:47\r\n
+Content -Type: text/html\r\n
+Content -Length: 34\r\n
+Server: MyLittleHTTPD /1.2\r\n
+\r\n
+<html ><body >Hi World </body ></html */
+ 
+  time_t rawtime = time(NULL);
+  struct tm timeinfo = *gmtime(&rawtime);
+ 
+  // Check for the file and store time information
+    if (stat(file, &sb) == -1) {
+        fprintf(stderr, "stat() Error");
+        return;
+  }
+  struct tm filetime = *gmtime(&(sb.st_mtime));
+ 
+  // Make appropriate response
+  switch(type) {
+    case 200:
+      typestring = "OK";
+      break;
+    case 400:
+      typestring = "Bad Request";
+      break;
+    case 403:
+      typestring = "Forbidden";
+      break;
+    case 404:
+      typestring = "Not Found";
+      break;
+    case 405:
+      typestring = "Method Not Allowed\r\nAllow: GET, HEAD";
+      break;
+  }
+ 
+  sprintf(response, "%s %d %s\r\nDate: %s\r\nServer: ThisProjectBlows\r\nLast -Modified: %s\r\nContent -Type: %s\r\nContent -Length: %d\r\nConnection: close\r\n\r\n",
+      version, type, typestring, getDate(timeinfo),getDate(filetime), "context-Type", (int)sb.st_size);
+ 
+  fprintf(stderr, "%s", response);
+}
+ 
+// Function to print the request information
+void logRequest(char *meth, char *url, struct tm t, int response) {
+  fprintf(stdout, "%s\t%s\t%s\t%d\n", meth, url, getDate(t), response);
+}
+ 
+// Function to return the date as a char *
+char *getDate(struct tm t) {
+  char *dateString = (char *) malloc(sizeof(char) * 20);
+  char* month[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  char* day[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+ 
+  sprintf(dateString, "%s, %i %s %d %d:%d", day[t.tm_wday], t.tm_mday,
+                  month[t.tm_mon], t.tm_year+1900, t.tm_hour, t.tm_min);
+  return dateString;
+}
+ 
+int packetMalformed(char *request[], int length) {
+  int i;
+  // Make sure host header is included
+  for (i = 0; i < length; i++) {
+    if (strcmp(request[i], "Host:") == 0) {
+      return 0;
+    }
+  }
+  return 1;
+}

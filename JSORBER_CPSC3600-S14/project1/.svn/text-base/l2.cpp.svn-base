@@ -1,0 +1,136 @@
+//#include <stdio.h>
+#include <assert.h>
+#include <string.h>
+#include "logger.h"
+#include "phy.h"
+#include "l1.h"
+#include "l2.h"
+
+#define TX_CHUNK   1
+#define RX_ACK     2
+#define L2_HEADER_SIZE 3
+#define MAX_L2_PAYLOAD (L1_CHUNK_MAX_SIZE - L2_HEADER_SIZE)
+
+int L2::init(L2_upper *upper, L1 *lower)
+{
+	m_upper = upper;
+	m_lower = lower;
+	
+	rx_chunk_count = 0;
+	rx_current_message = NULL;
+	tx_done = FALSE;
+
+	return 1;
+}
+
+
+void L2::pop(uint8_t *chunk, int length)
+{
+	
+	uint8_t buffer[L1_CHUNK_MAX_SIZE];
+	uint8_t ack_buffer[L1_CHUNK_MAX_SIZE];
+	
+	assert(chunk != NULL);
+	assert(length >= L2_HEADER_SIZE); //all L2 chunks have a 3-byte header.
+
+	memset(buffer,0,sizeof(buffer));
+	memcpy(buffer,chunk,length);
+	output(LOG_L2,"Rx %s (%d)",buffer,length);
+	
+	//read off headers
+	int packet_type = buffer[0];
+	int packet_count = buffer[1];
+	int payload_length = buffer[2];
+	
+	if (packet_type == TX_CHUNK)
+	{
+		
+		//starting a new message?
+		if (packet_count == 0)
+		{
+			//reset the rx buffer
+			if (rx_current_message != NULL) 
+			{
+				output(LOG_L2, "Abandoning old message (%d chunks)",rx_chunk_count);
+				free(rx_current_message);
+				rx_current_message = NULL;
+			}
+			rx_chunk_count = 0;
+			//maybe
+			rx_current_message = (uint8_t*)malloc(payload_length);
+		}
+		
+		int old_size = rx_chunk_count * MAX_L2_PAYLOAD;
+		int new_size = old_size + payload_length;
+		
+		uint8_t *new_buffer = (uint8_t*) malloc(new_size);
+		if (rx_chunk_count > 0)
+		{
+			assert(rx_current_message != NULL);
+			memcpy(new_buffer, rx_current_message, old_size);
+			free(rx_current_message);
+		}
+		rx_current_message = new_buffer;
+		memcpy(rx_current_message+old_size, buffer+L2_HEADER_SIZE, payload_length);
+		rx_chunk_count++;
+		if (payload_length < MAX_L2_PAYLOAD)
+		{
+			//this message is done
+			m_upper->pop(rx_current_message, new_size);
+			free(rx_current_message);
+			rx_current_message = NULL;
+			rx_chunk_count = 0;
+		}
+		
+		//make ACK;
+		ack_buffer[0] = RX_ACK;
+		ack_buffer[1] = packet_count;
+		ack_buffer[2] = (rx_current_message == NULL);
+		m_lower->push(ack_buffer,sizeof(ack_buffer));
+		
+	} else if (packet_type == RX_ACK) {
+		output(LOG_L2, "Node %X received ACK (%d)",this, packet_count);
+		if (packet_count == chunk_count)
+		{
+			chunk_count++;
+			if (buffer[2]) tx_done = TRUE;
+		}
+		
+	} else {
+		output(LOG_L2, "ERROR!!!! Unknown packet type (%d)",packet_type);
+	}
+	
+	
+}	
+
+
+//send a chunk
+int L2::push(uint8_t *message, int length)
+{
+	uint8_t chunk_buffer[L1_CHUNK_MAX_SIZE];
+
+	output(LOG_L2,"PUSH (from %X), %i bytes", this, length);
+	
+	if (message == NULL) return -1;
+	
+	chunk_count = 0;
+	tx_done = 0;
+	
+	while (!tx_done)
+	{
+		int bytes_sent_already = (chunk_count * (MAX_L2_PAYLOAD));
+		int bytes_left = length-bytes_sent_already;
+		int bytes_to_send = (bytes_left > MAX_L2_PAYLOAD ? MAX_L2_PAYLOAD : bytes_left);
+		//make next chunk
+		chunk_buffer[0] = TX_CHUNK;
+		chunk_buffer[1] = chunk_count;
+		chunk_buffer[2] = bytes_to_send;
+		memcpy(chunk_buffer+L2_HEADER_SIZE, message+bytes_sent_already, bytes_to_send);
+		
+		output(LOG_L2,"Sending (from %X), %i bytes (%d)", this, bytes_to_send, chunk_count);
+		m_lower->push(chunk_buffer, L1_CHUNK_MAX_SIZE);
+	}
+	
+	output(LOG_L2,"PUSH (from %X) finished! (%d)", this, chunk_count);
+	return length;
+}

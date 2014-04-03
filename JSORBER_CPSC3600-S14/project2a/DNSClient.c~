@@ -1,0 +1,161 @@
+//Sarah Strickland
+//http://www.cs.rutgers.edu/~pxk/416/notes/c-tutorials/getopt.html
+
+#include "DNSClient.h"
+
+void fheader(uint8_t* buff){
+
+	int id;
+	uint16_t* header = (uint16_t*)buff;
+	
+//set id	
+	id = rand() % (MAX_16_BIT + 1); 
+	header[0] = htons((uint16_t) id); 
+
+//set next 16 bits 
+//all zeros except RD which equals 256
+	header[1] =  (uint16_t) htons(0b0000000100000000);
+//QDCOUNT
+	header[2] = (uint16_t) htons(1);
+//ANCOUNT
+	header[3] = (uint16_t) htons(0);
+//NSCOUNT
+	header[4] = (uint16_t) htons(0);
+//ARCOUNT
+	header[5] = (uint16_t) htons(0);
+}
+ 
+void fquery(uint8_t* buff, char*name){
+
+//QNAME
+	int offset=0;
+	char* dot;
+	char* dotname;
+	uint8_t length;
+	
+	dotname = (char*) malloc(strlen(name)+2);
+	memcpy(dotname, name, strlen(name)+1);
+	dotname[strlen(name)+1] = '\0'; 
+
+	dot = strtok(dotname, ".");
+
+	while(dot != NULL){
+		length = (uint8_t)strlen(dot);
+		printf("length: %i\n", length);
+		//htons(length);
+		memcpy(buff+offset, &length, 1);
+		offset++;
+	//	htons(dot);
+		memcpy(buff+offset, dot, strlen(dot));
+		offset= offset + strlen(dot);
+		dot = strtok(NULL,".");
+	}
+	
+	memcpy(buff+offset, 0, sizeof(uint8_t));
+	offset = offset + sizeof(uint8_t);
+
+//QTYPE
+	buff[offset]= (uint8_t) htons(0x0001);
+	//memcpy(buff+offset, (uint8_t*)0x0001,sizeof(uint8_t*));
+	offset = offset + sizeof(uint8_t);
+
+//QCLASS
+	buff[offset]=(uint8_t) htons(0x0001);
+	//memcpy(buff+offset, (uint16_t *)0x0001, sizeof(uint16_t*)); 	
+}
+
+
+int main(int argc, char **argv){
+
+    int c,socketfd,i;
+    extern int optind;
+    extern char *optarg;
+    int time = -1, retries = -1, port = -1;
+    char* ip = NULL; 
+	char*name = NULL;
+	uint8_t* header = NULL;
+	uint8_t* query = NULL;
+    uint8_t* buff = NULL;
+    struct sockaddr_in addr;   
+
+//buffer to hold all the things
+    buff = (uint8_t*) malloc (1024);
+//header is the beginning of the buffer
+	header = buff; 
+//qurey is the after the header
+	query = buff + 12;
+
+//parse arguments 
+    while ((c = getopt(argc, argv, "t:r:p:")) != -1) {
+        switch(c) {
+        case 't':
+	    time = atoi(optarg);
+            break;
+        case 'r':
+	   retries = atoi(optarg);
+            break;
+        case 'p':
+	    port = atoi(optarg);
+            break;
+        case '?': //default error out
+            printf("unkown argument, %s \n", optarg);
+	    exit(1);
+        }
+		if((optind+2) > argc){
+			printf("not enough arguments, must enter server and name \n");	//make sure there are enough args
+			exit(1);
+		}
+	}
+
+    ip = argv[optind];//ip address
+    name = argv[optind+1]; //name 
+
+	//set time retries and port if not specified 
+    if(time == -1) time = 5;
+    if(retries == -1) retries = 3;
+    if(port == -1) port = 53;
+
+//set header
+	fheader(header);
+//create query
+	 fquery(query, name);
+
+	 printf("buffer size: %li\n", (sizeof(buff)/sizeof(buff[0])));
+	 
+/*	 for(i = 0; i < 1024; i++){
+		 buff[i] = htons(buff[i]);
+	 }*/
+	 for(i = 0; i< 33; i++){
+		 printf("buff[%i]: %x\n", i, buff[i]);
+	 }
+
+//create socket 
+
+	bzero(&addr, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+
+	if(inet_pton(AF_INET ,ip, &addr.sin_addr) <= 0){
+		printf("inet_pton error");
+		return 0;
+	}
+
+	if ((socketfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+		printf("couldn't create socket\n");
+		return 0;
+	}
+
+	printf("sizeof(buff): %li\n", sizeof(buff));
+	printf("sizeof(addr): %li\n", sizeof(addr.sin_addr));
+//send to port
+	if ((sendto(socketfd, buff, sizeof(buff), 0, (struct sockaddr *)&addr, sizeof(addr))) < 0){
+		printf("sendto error\n");
+		return 0;
+	}
+	
+
+    return 0;
+}
+
+
+

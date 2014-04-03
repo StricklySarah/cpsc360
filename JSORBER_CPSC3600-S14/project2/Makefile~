@@ -1,0 +1,11 @@
+all: dns question
+
+dns: DNSClient.o
+	gcc -Wall -g DNSClient.c -o dns
+
+question: question.o
+	gcc -Wall -g question.c DNSClient.o -o question
+
+clean:
+	rm -rf *o dns
+	rm question

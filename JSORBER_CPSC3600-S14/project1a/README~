@@ -1,0 +1,28 @@
+Name: Sarah Strickland
+
+Description: This project simulated a layered network. Each layer called the layer below its pop to recieve data, made the data into the correct format for the layer above it then pushed the data to send it. 
+
+KNOWN PROBLEMS:
+
+1. L4b has a segmentation fault in the pop method when m_upper->pop() is called. This is due to casting a uint16_t* to an int*. I could not figure out how to resolve this issue. 
+
+2. In l2 when lossy is turned on and something is lost from the ack the program continues to send the message even though it has already correctly received it. 
+
+3. The overhead of the program is too high.   
+
+DESIGN:
+
+Layer1: 
+In layer 1 I pushed an end framing character to check for lossiness. In pop I check for the frame character and that the length+1 equals m_index, meaning it is the end of the chunk, if it is the chunk is popped. If not I check to see if it is at the end and not a framing charater, in which case a byte was lost and i throw away the chuck. If it is a frame and it isn't the end a byte was also lost and the chunk is thrown out. And finally if it isn't a frame and isn't the end add it to the chunk and inc the index.  
+
+Layer2: 
+In layer 2 I modified the header to only be 2 bytes. The first byte holds the type of chunk (tx or rx) in the first bit and the bytes left to send in the last 4 bits and the second byte holds the chunk count. Pop extracts the data from the header and checks to see what type of message is being sent. If it is a message to be transmitted and pops it once it's a full message and sends an acknowledgement buffer. If the message type is rx it tells the program that the message has been sucessfully transmitted. However, when lossy is turned on and something happens to part of the acknowledgement buffer,the program continues to send the message even if it has already been recieved. 
+
+Layer3:
+In layer 3 a check sum is computed and sent along with the message and recomputed on the other side, if the checksums match the message is sent on, if they don't the message is haulted and isn't sent any further. 
+
+Layer4:
+In layer 4 push a message is compiled and sent over the network with a name length, name, value length and value. In pop, the name length, name, value length and value are extracted. 
+
+Layer4b:
+In layer 4b push concatinates a list of the number of commands, the length of each command and the individual commands and pushes it. Pop extracts this data and pops it. However, there is a segmentation fault in the pop to upper layer due to a cast from a uint16* to an int*. 

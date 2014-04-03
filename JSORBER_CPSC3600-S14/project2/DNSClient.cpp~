@@ -1,0 +1,139 @@
+//Sarah Strickland
+//http://www.cs.rutgers.edu/~pxk/416/notes/c-tutorials/getopt.html
+
+#include <DNSClient.h>
+
+char* fheader(){
+    char* header;
+    int index=0;
+    header = (char*)malloc(sizeof(char)*96);
+
+    for(int i = 0; i < 16; i ++){
+        header[index] = (char)(rand() % 2);
+	index++;
+    }
+   
+    //set QR
+    header[index]=0;
+    index++;
+    //set OpCode
+    for(int i = 0; i < 4; i++){
+        header[index] = 0;
+	index++; 
+    }
+    //AA
+    header[index] = 0;
+     index++;
+    //TC
+    header[index]=0;
+    index++;
+    //RD
+    header[index] =0;
+    index++;
+    //RA
+    header[index]=0;
+    index++;
+   //z
+   for(int i = 0; i <3; i++){
+	header[index]=0;
+	index++;
+   }
+    //RCODE
+    for(int i = 0; i < 4; i++){
+        header[index] = 0;
+        index++;
+    }
+    //QDCOUNT
+    for(int i = 0; i < 15; i++){
+        header[index] = 0;
+        index++;
+    }
+    header[index] = (char)1;
+    index++;
+    //ANCOUNT
+    for(int i =0; i<16;i++){
+	header[index] = 0;
+	index++;
+    }
+    //NSCOUNT
+    for(int i =0; i<16;i++){
+        header[index] = 0;
+        index++;
+    }
+    //ARCOUNT
+    for(int i =0; i<16;i++){
+        header[index] = 0;
+        index++;
+    }
+   return header;
+}
+
+
+int main(int argc, char **argv){
+
+    int c;
+    extern int optind;
+    extern char *optarg;
+    int time = -1, retries = -1, port = -1;
+    char* ip = NULL, *name = NULL;
+    char* header = NULL;
+    struct sockaddr_in addr;    
+
+    while ((c = getopt(argc, argv, "t:r:p:")) != -1) {
+        switch(c) {
+        case 't':
+	    time = atoi(optarg);
+            break;
+        case 'r':
+	   retries = atoi(optarg);
+            break;
+        case 'p':
+	    port = atoi(optarg);
+            break;
+        case '?': //default error out
+            printf("unkown argument, %s \n", optarg);
+	    exit(1);
+        }
+	if((optind+2) > argc){
+	    printf("not enough arguments, must enter server and name \n");	//make sure there are enough args
+	    exit(1);
+	}
+    }
+    ip = (char*) malloc(sizeof(argv[optind]));
+    name = (char*) malloc(sizeof(argv[optind+1]));
+
+    ip = argv[optind];//ip address
+    name = argv[optind+1]; //name 
+
+	//set time retries and port if not specified 
+    if(time == -1) time = 5;
+    if(retries == -1) retries = 3;
+    if(port == -1) port = 53;
+
+    printf("time: %d\n", time);
+    printf("retries: %d\n", retries);
+    printf("port: %d\n", port);
+    printf("ip: ");
+    for(unsigned int i = 0; i < strlen(ip); i++){
+	printf("%c",ip[i]);
+    }
+    printf("\n");
+    printf("name: ");
+    for(unsigned int i = 0; i < strlen(name); i++){
+       printf("%c", name[i]);
+    }
+    printf("\n");
+
+	//create socket and DNS header 
+    addr.sin_family = AF_INET;
+    inet_pton(AF_INET ,ip, &addr.sin_addr);
+    addr.sin_port = htons(port);
+    
+    header = (char*)malloc(sizeof(char)*96);
+    header = fheader();
+
+    return 0;
+}
+
+
+

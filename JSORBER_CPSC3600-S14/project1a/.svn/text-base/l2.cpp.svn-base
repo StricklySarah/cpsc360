@@ -1,0 +1,22 @@
+#include "l1.h"
+#include "l2.h"
+
+
+int L2::init(L2_upper *upper, L1 *lower)
+{
+	
+	return 1;
+}
+
+
+void L2::pop(uint8_t *chunk, int length)
+{
+	
+}	
+
+
+
+int L2::push(uint8_t *message, int length)
+{
+	
+}
